@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
+node_modules/
+dist/
+*.egg-info/
+.venv/
+venv/
+playwright-report/
+test-results/
+.DS_Store

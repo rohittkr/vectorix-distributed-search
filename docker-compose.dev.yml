@@ -1,0 +1,30 @@
+# Development overrides: hot-reload for backend/frontend, verbose logging.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ./backend/app:/app/app
+    environment:
+      LOG_LEVEL: DEBUG
+      ENVIRONMENT: development
+
+  worker:
+    volumes:
+      - ./backend/app:/app/app
+    environment:
+      LOG_LEVEL: DEBUG
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+    volumes:
+      - ./frontend/src:/app/src
+    ports:
+      - "5173:5173"
