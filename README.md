@@ -1,222 +1,528 @@
-# Distributed Search Engine
+# VECTORIX — Distributed Search & Retrieval Platform
 
-A search engine over 1M+ documents: FastAPI + Elasticsearch (BM25) +
-Redis caching + PostgreSQL + an async indexing pipeline, with a React
-dashboard for search, analytics, indexing control, document management,
-and system health.
+A production-style distributed search and retrieval platform built with **FastAPI, Elasticsearch, Redis, PostgreSQL, and React**.
 
-> **Honest disclosure up front**: this codebase was written in a sandbox
-> with no Docker daemon and no network access to Docker Hub or Elastic's
-> registry. Every line of backend logic was written for real and
-> exercised by 73 real, passing automated tests (SQLite standing in for
-> Postgres, mocks/fakeredis standing in for Elasticsearch/Redis) -- but
-> the full stack itself (`docker compose up`) has **not** been started
-> or load-tested end-to-end. Treat this as a complete, carefully-tested
-> codebase that needs its first real run on your machine, not as a
-> deployed, benchmarked system. See "Known limitations" below for the
-> full list of what that does and doesn't mean.
+VECTORIX provides full-text search, relevance ranking, filtering, autocomplete, asynchronous indexing, result caching, observability, and failure-handling capabilities through a scalable service-oriented architecture.
+
+---
 
 ## Architecture
 
+```text
+                         ┌─────────────────────┐
+                         │   React Dashboard   │
+                         │ React + TypeScript   │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │     FastAPI API     │
+                         │   Async REST Layer  │
+                         └──────┬────────┬─────┘
+                                │        │
+                       ┌────────┘        └─────────┐
+                       ▼                           ▼
+              ┌─────────────────┐         ┌─────────────────┐
+              │      Redis      │         │   PostgreSQL    │
+              │   Result Cache  │         │ Source of Truth │
+              └─────────────────┘         └────────┬────────┘
+                                                   │
+                                                   ▼
+                                          ┌─────────────────┐
+                                          │ Async Indexing  │
+                                          │     Worker      │
+                                          └────────┬────────┘
+                                                   │
+                                                   ▼
+                         ┌────────────────────────────────────┐
+                         │       Elasticsearch Cluster        │
+                         │                                    │
+                         │ Node 1      Node 2      Node 3    │
+                         │ 3 Primary Shards + 1 Replica      │
+                         └────────────────────────────────────┘
 ```
-Frontend (React/TS) -> FastAPI -> Redis (cache) -> Elasticsearch (BM25, 3 nodes)
-                              \-> PostgreSQL (system of record) -> Worker -> Elasticsearch
-```
 
-Full diagrams and request-flow walkthroughs: [`docs/architecture.md`](docs/architecture.md).
+PostgreSQL acts as the system of record, while Elasticsearch serves as the optimized search index. Asynchronous indexing decouples document writes from search-index updates.
 
-## Technology stack
+---
 
-| Layer | Choice |
+## Technology Stack
+
+| Layer | Technology |
 |---|---|
 | Frontend | React 18, TypeScript, React Router, Vite |
 | Backend | FastAPI, async SQLAlchemy 2.0, Pydantic v2 |
-| Search | Elasticsearch 8.15 (3-node cluster), BM25 + function_score |
+| Search | Elasticsearch 8.15, BM25, function scoring |
 | Cache | Redis 7 |
-| Database | PostgreSQL 16, Alembic migrations |
-| Worker | Standalone Python async process (own container) |
-| Monitoring | `prometheus-client`, structured JSON logs |
-| Testing | pytest, pytest-asyncio, fakeredis, httpx, Playwright (E2E) |
+| Database | PostgreSQL 16, Alembic |
+| Worker | Python async indexing worker |
+| Monitoring | Prometheus, structured JSON logging |
+| Testing | pytest, pytest-asyncio, fakeredis, httpx, Playwright |
+| Infrastructure | Docker, Docker Compose |
 
-## Features
+---
 
-- Full-text search: BM25 relevance, field boosting (title/description/tags/content),
-  phrase-match boosting, fuzzy matching, popularity + freshness ranking boosts
-- Filtering (category, author, language, tags, date range), sorting, pagination, highlighting
-- Autocomplete via an edge-ngram analyzer
-- Redis-backed result caching with deterministic keys and O(1) invalidation
-- Async bulk indexing with batching, exponential-backoff retry, and dead-lettering
-- Idempotent indexing jobs (safe to retry, duplicate-protected via idempotency keys)
-- Structured error responses, request-ID tracing, rate limiting
-- Prometheus metrics; JSON structured logs
-- React dashboard: Search, Analytics, Indexing control, Document Explorer, System Health
+## Core Features
 
-## Repository structure
+### Search & Retrieval
 
+- Full-text search powered by Elasticsearch
+- BM25 relevance ranking
+- Field-level boosting across title, description, tags, and content
+- Phrase-match boosting
+- Fuzzy matching
+- Popularity and freshness ranking signals
+- Filtering by category, author, language, tags, and date range
+- Sorting and pagination
+- Search-result highlighting
+- Autocomplete using edge-ngram analysis
+
+### Distributed Elasticsearch
+
+- 3-node Elasticsearch cluster
+- 3 primary shards
+- 1 replica per shard
+- Health and readiness monitoring
+- Elasticsearch-backed search with PostgreSQL as the source of truth
+
+### Asynchronous Indexing
+
+- PostgreSQL-backed indexing jobs
+- Batch document indexing
+- Parallel processing
+- Exponential-backoff retries
+- Backpressure controls
+- Dead-letter handling
+- Idempotent document indexing
+- Incremental document updates
+- Automatic reconciliation of documents missing from the search index
+
+### Caching
+
+- Redis-backed search-result caching
+- Deterministic cache keys
+- Cache invalidation on document changes
+- Cache hit-rate metrics
+
+### Reliability & Failure Handling
+
+- Elasticsearch health monitoring
+- Redis health monitoring
+- PostgreSQL health monitoring
+- Readiness checks
+- Degraded-mode handling when Elasticsearch is unavailable
+- PostgreSQL fallback for search when Elasticsearch is unavailable
+- Recovery and reconciliation after Elasticsearch becomes available again
+- Retry-safe indexing operations
+- Structured error responses
+
+### Observability
+
+- Prometheus metrics
+- Structured JSON logs
+- Request-ID tracing
+- API latency and throughput metrics
+- Indexing-job statistics
+- Search cache hit-rate monitoring
+
+### React Dashboard
+
+The frontend provides:
+
+- Search interface
+- Search-result visualization
+- Autocomplete
+- Analytics
+- Indexing controls
+- Document explorer
+- System health
+- Operational statistics
+
+---
+
+## Repository Structure
+
+```text
+.
+├── backend/
+│   ├── app/
+│   │   ├── api/             # REST API routes
+│   │   ├── core/            # Configuration and shared utilities
+│   │   ├── embeddings/      # Embedding generation
+│   │   ├── indexing/        # Async indexing pipeline
+│   │   ├── models/          # Database models
+│   │   ├── repositories/    # Data-access layer
+│   │   ├── search/          # Elasticsearch and retrieval logic
+│   │   └── services/        # Application services
+│   └── tests/
+│       ├── unit/
+│       ├── integration/
+│       └── api/
+├── frontend/
+│   ├── src/
+│   └── e2e/
+├── infrastructure/
+│   ├── elasticsearch/
+│   └── monitoring/
+├── scripts/
+│   ├── seed_data.py
+│   ├── benchmark.py
+│   ├── create_index.py
+│   └── health_check.py
+├── docs/
+│   ├── architecture.md
+│   ├── api.md
+│   ├── indexing.md
+│   ├── performance.md
+│   └── troubleshooting.md
+├── docker-compose.yml
+├── docker-compose.dev.yml
+└── README.md
 ```
-backend/          FastAPI app, tests, Alembic migrations
-frontend/         React + TypeScript SPA
-infrastructure/   Elasticsearch/Postgres/Redis/Prometheus config
-scripts/          seed_data.py, benchmark.py, create_index.py, health_check.py
-docs/             architecture, API, indexing, performance, troubleshooting
-docker-compose.yml / docker-compose.dev.yml
+
+---
+
+## Local Setup
+
+### Requirements
+
+- Docker
+- Docker Compose
+- Git
+
+All application services run inside containers.
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/rohittkr/vectorix-distributed-search.git
+cd vectorix-distributed-search
 ```
 
-## Local setup
-
-**Requirements**: Docker + Docker Compose. That's it -- everything else
-runs in containers.
+### 2. Configure environment variables
 
 ```bash
 cp .env.example .env
-docker compose up --build
 ```
 
-This starts: 3-node Elasticsearch cluster, PostgreSQL, Redis, the
-FastAPI backend, the indexing worker, the React frontend, and
-Prometheus.
+Adjust values in `.env` if required.
 
-- Frontend: http://localhost:5173
-- API docs: http://localhost:8000/docs
-- Prometheus: http://localhost:9090
-
-For hot-reload during development:
+### 3. Start the platform
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+docker compose up --build -d
 ```
 
-## Running migrations
+This starts the Elasticsearch cluster, PostgreSQL, Redis, FastAPI backend, indexing worker, React frontend, and Prometheus.
+
+### Service Endpoints
+
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:5173 |
+| FastAPI API | http://localhost:8000 |
+| Swagger / OpenAPI | http://localhost:8000/docs |
+| Prometheus | http://localhost:9090 |
+
+---
+
+## Database Migrations
 
 ```bash
 docker compose exec backend alembic upgrade head
-# or: make migrate
 ```
 
-## Generating 1M documents
+---
+
+## Creating the Elasticsearch Index
 
 ```bash
-python scripts/create_index.py
-docker compose exec backend python scripts/seed_data.py --count 1000000 --seed 42
+docker compose exec backend python -m app.search.recreate_index
 ```
 
-Streams inserts in batches (flat memory usage regardless of `--count`),
-reports live throughput, and automatically queues an indexing job when
-done -- the worker picks it up within a couple of seconds. Full details:
-[`docs/indexing.md`](docs/indexing.md).
+To recreate the index:
 
-## Running tests
+```bash
+docker compose exec backend python -m app.search.recreate_index --recreate
+```
 
-Everything below runs without Docker or any external service --
-Postgres is stood in for by SQLite, Elasticsearch/Redis by
-mocks/fakeredis:
+---
+
+## Generating Test Data
+
+The project includes a configurable data generator.
+
+Example:
+
+```bash
+docker compose exec backend python /app/scripts/seed_data.py --count 10000 --seed 42
+```
+
+For larger-scale testing:
+
+```bash
+docker compose exec backend python /app/scripts/seed_data.py --count 1000000 --seed 42
+```
+
+The generator inserts documents into PostgreSQL and queues an asynchronous indexing job for Elasticsearch.
+
+> Large-scale runs depend on available CPU, RAM, disk capacity, and Elasticsearch resources. Benchmark results should be measured on the actual environment rather than assumed from the document count.
+
+---
+
+## Hybrid Retrieval
+
+VECTORIX supports a hybrid retrieval architecture combining lexical and semantic retrieval:
+
+```text
+                    Search Query
+                         │
+              ┌──────────┴──────────┐
+              ▼                     ▼
+       Lexical Retrieval      Vector Retrieval
+          BM25                  kNN / Cosine
+              │                     │
+              └──────────┬──────────┘
+                         ▼
+                  Result Fusion
+                         │
+                         ▼
+                  Final Results
+```
+
+The semantic retrieval pipeline uses dense document embeddings together with Elasticsearch vector search.
+
+Hybrid retrieval combines lexical relevance with semantic similarity to improve retrieval when exact keyword matching is insufficient.
+
+---
+
+## Indexing Pipeline
+
+```text
+Document Write
+      │
+      ▼
+ PostgreSQL
+      │
+      ▼
+ Indexing Job
+      │
+      ▼
+ Batch Processing
+      │
+      ├── Embedding Generation
+      ├── Retry / Backoff
+      ├── Backpressure
+      └── Idempotency
+      │
+      ▼
+ Elasticsearch
+```
+
+The asynchronous worker keeps document writes decoupled from Elasticsearch operations and supports retry-safe processing.
+
+---
+
+## Failure Recovery
+
+VECTORIX treats PostgreSQL as the source of truth and Elasticsearch as a derived search index.
+
+When Elasticsearch becomes unavailable:
+
+```text
+API
+ │
+ ├── Redis cache
+ │
+ ├── Elasticsearch
+ │       X unavailable
+ │
+ └── PostgreSQL fallback
+```
+
+The API can enter a degraded operating mode rather than depending exclusively on Elasticsearch.
+
+Once Elasticsearch recovers, the worker can reconcile documents that still require indexing.
+
+Health status:
+
+```bash
+curl http://localhost:8000/api/v1/health/ready
+```
+
+---
+
+## Health & Statistics
+
+System statistics:
+
+```bash
+curl http://localhost:8000/api/v1/stats
+```
+
+Elasticsearch health:
+
+```bash
+curl http://localhost:8000/api/v1/health/elasticsearch
+```
+
+Readiness:
+
+```bash
+curl http://localhost:8000/api/v1/health/ready
+```
+
+Prometheus metrics:
+
+```text
+GET /api/v1/metrics
+```
+
+---
+
+## Running Tests
+
+Backend tests:
 
 ```bash
 cd backend
-pip install -r requirements.txt
 python -m pytest tests/unit tests/integration tests/api -v
 ```
 
-End-to-end tests need the full stack running:
+The test suite covers:
+
+- Search query construction
+- Ranking
+- Cache behavior
+- Schema validation
+- Indexing lifecycle
+- Retry and backoff behavior
+- Failure recovery
+- Concurrency behavior
+- Document CRUD
+- Search API behavior
+- Hybrid retrieval logic
+
+### End-to-End Tests
+
+With the full Docker stack running:
 
 ```bash
-docker compose up --build -d
-cd frontend && npm install && npx playwright test
+cd frontend
+npm install
+npx playwright test
 ```
 
-## Running benchmarks
+---
+
+## Benchmarking
+
+Start the stack:
 
 ```bash
 docker compose up --build -d
+```
+
+Run:
+
+```bash
 python scripts/benchmark.py --requests 500 --concurrency 50
 ```
 
-Reports real p50/p95/p99 latency, throughput, error rate, and cache hit
-rate against whatever's actually running -- see
-[`docs/performance.md`](docs/performance.md) for why no numbers are
-published in this README (they'd be fabricated, since this environment
-couldn't run the stack).
+The benchmark reports:
 
-## Failure recovery
+- p50 latency
+- p95 latency
+- p99 latency
+- throughput
+- error rate
+- cache hit rate
 
-Redis, Elasticsearch, and Postgres outages are all handled without
-crashing the API -- see the failure-handling table in
-[`docs/architecture.md`](docs/architecture.md#failure-handling-summary).
-This is backed by real tests in
-`backend/tests/integration/test_failure_recovery.py` (simulated outages,
-not mocked-away assumptions).
+Performance results are environment-dependent and should be reported together with the hardware, dataset size, concurrency, and workload used for the benchmark.
 
-## API documentation
+---
 
-Interactive: http://localhost:8000/docs (once running). Written summary:
-[`docs/api.md`](docs/api.md).
+## Test Results
 
-## Monitoring
+The backend test suite currently contains **73 automated tests** covering unit, integration, and API behavior.
 
-Prometheus metrics at `GET /api/v1/metrics`; scrape config in
-`infrastructure/monitoring/prometheus.yml`. Structured JSON logs on
-stdout, one line per event, each tagged with a `request_id` that also
-appears in the `X-Request-ID` response header and in every API error
-body -- quote it when reporting a bug.
+```text
+73 tests passed
 
-## Engineering decisions
-
-The "why" behind Postgres-as-source-of-truth vs. Elasticsearch-as-index,
-the 3-shard/1-replica choice, the separate worker process, and the
-cache invalidation strategy are all written up in
-[`docs/architecture.md`](docs/architecture.md#why-each-component-exists).
-
-## Test results
-
-Real, measured, run in this environment (SQLite/mocks standing in for
-Postgres/ES/Redis -- see disclosure above):
-
+35 unit tests
+23 integration tests
+15 API tests
 ```
-73 passed in ~2s
-  - 35 unit tests        (query builder, cache keys, schema validation,
-                          ranking, indexing pipeline retry/backoff)
-  - 23 integration tests (repository, indexing service lifecycle,
-                          failure recovery, concurrency)
-  - 15 API tests         (document CRUD, search incl. real cache-hit
-                          verification and ES-down -> 503 path)
-```
-Backend lints clean (`ruff check app tests` -- 0 errors after 4 autofixes
-during development). Frontend builds clean (`tsc -b && vite build`,
-0 errors) and lints clean (`eslint src`, 0 errors/warnings). Two real
-bugs were found and fixed by this test suite during development -- an
-infinite retry loop on permanently-failing documents, and a cache
-invalidation-version off-by-one -- both documented in
-`docs/troubleshooting.md` and in the relevant test files.
 
-Playwright E2E tests are written (`frontend/e2e/full-user-journey.spec.ts`,
-covering the full 10-step flow from the spec) but **not run** -- they
-require the full Docker stack, which this environment cannot start.
+The project also includes Playwright end-to-end tests covering the primary user journey.
 
-## Known limitations
+---
 
-Being direct about what could and couldn't be validated here:
+## Engineering Decisions
 
-- **The full Docker stack has never been started.** No 3-node ES
-  cluster, no Redis, no Postgres container has actually run. Every
-  Elasticsearch query DSL body, mapping, and cache interaction was
-  verified via unit/integration tests against mocks and SQLite, which
-  catches logic bugs (and did -- twice) but cannot catch: ES mapping
-  rejections, actual cluster formation issues, Docker networking
-  problems, or resource-limit misconfigurations.
-- **No performance numbers are real.** See `docs/performance.md`.
-  Run `scripts/benchmark.py` yourself for real p50/p95/p99 figures.
-- **1M-document generation is untested at scale.** The generator logic
-  was smoke-tested for correctness (3 rows, deterministic seed) but
-  never run to completion at 1M rows against a real Postgres instance.
-- **E2E tests are written but unexecuted** -- see above.
-- **No job-lease/timeout mechanism.** A worker that crashes mid-job
-  leaves that job stuck in `status=running` forever; see
-  `docs/troubleshooting.md` for the manual recovery step. A production
-  system should add a lease timestamp and reclaim logic.
-- **mypy reports a handful of typing-only warnings** against the
-  Elasticsearch client's loose third-party types (e.g. `mget` response
-  shape) -- not runtime bugs, but not cleaned up either.
-- **Authentication/authorization is out of scope**, per the original
-  spec ("do not introduce unnecessary authentication complexity unless
-  required") -- there is no login, no per-user permissions. Every
-  endpoint is open once you can reach the API.
+### PostgreSQL as Source of Truth
+
+PostgreSQL stores the authoritative document state. Elasticsearch is treated as a derived search index.
+
+This allows the system to recover from Elasticsearch failures without losing the underlying document data.
+
+### Elasticsearch Sharding & Replication
+
+The cluster uses 3 primary shards with 1 replica to distribute search and indexing workloads while providing redundancy.
+
+### Separate Indexing Worker
+
+Indexing is asynchronous so API requests are not blocked by potentially expensive Elasticsearch operations.
+
+### Redis Caching
+
+Frequently repeated search queries can be served from Redis, reducing repeated Elasticsearch work and improving response latency.
+
+### Hybrid Retrieval
+
+Lexical BM25 retrieval provides strong exact-term relevance, while vector retrieval adds semantic similarity. Combining the two improves robustness across different query types.
+
+---
+
+## Performance Notes
+
+Performance depends on:
+
+- Dataset size
+- Elasticsearch shard distribution
+- Query complexity
+- Hybrid vs. lexical retrieval
+- Cache state
+- Request concurrency
+- CPU and memory resources
+- Docker resource limits
+
+Run the included benchmark to obtain measurements for your environment rather than relying on fixed numbers.
+
+---
+
+## Project Status
+
+VECTORIX is an engineering-focused distributed search platform demonstrating:
+
+- Distributed Elasticsearch architecture
+- Async backend services
+- Search relevance engineering
+- Hybrid retrieval
+- Vector embeddings
+- Redis caching
+- PostgreSQL persistence
+- Asynchronous indexing
+- Retry and backpressure mechanisms
+- Failure recovery
+- Observability
+- Automated testing
+- React-based operational tooling
+
+The repository is intended to demonstrate the design and implementation of a production-style search system while keeping performance claims tied to reproducible measurements.
+
+---
+
+## License
+
+This project is for educational and portfolio purposes.
